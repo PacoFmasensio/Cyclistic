@@ -1,0 +1,101 @@
+---
+title: "Cyclistic - Chicago"
+author: "Francisco Morales"
+date: "2023-08-16"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ___Proceso de datos en R___
+
+### **Recogida de Datos**
+
+Proporcionados por *Motivate International Inc* y ubicados en la siguiente dirección <https://divvy-tripdata.s3.amazonaws.com/index.html>.
+
+Recogemos 12 ficheros CSV con las operaciones de los últimos doce meses.
+Guardados en la carpeta 'Datos' son unificados en un mismo dataframe en el siguiente proceso:
+
+### **Carga de los paquetes necesarios**
+
+```{r, eval=FALSE}
+library(dplyr) 
+library(readr)  
+library(lubridate)  
+```
+
+
+### **Lectura de los ficheros**
+Incorporamos cada fichero CSV presente en la carpeta 'Datos' a una lista de dataframes
+
+```{r, eval=FALSE}
+# Ruta de la carpeta que contiene los archivos CSV  
+
+ruta_carpeta<-'Datos'
+
+# Lista para almacenar los dataframes de cada archivo CSV  
+
+listadatosCSV <- list()
+
+# Obtener la lista de archivos CSV en la carpeta
+archivos_csv <- list.files(path = ruta_carpeta, pattern = "\\.csv$", full.names = TRUE)
+
+# Leer cada archivo CSV y almacenarlos en la lista de dataframes
+for (archivo_csv in archivos_csv) {
+  df <- read_csv(archivo_csv)  
+  listadatosCSV[[archivo_csv]] <- df
+}
+```
+
+### **Combinar todos los dataframes en un único dataframe**
+
+```{r, eval=FALSE}
+dfDatos <- bind_rows(listadatosCSV)
+```
+
+\newpage
+
+### **Seleccionamos y creamos las columnas necesarias y marcamos registros defectuosos**
+
+```{r, eval=FALSE}
+dfDatos<-dfDatos %>% 
+  select(rideable_type, started_at, ended_at,member_casual) %>% 
+  mutate(ndata=1) %>% 
+  mutate(rid_na= ifelse(is.na(rideable_type),1,0)) %>%
+  mutate(sta_na= ifelse(is.na(started_at),1,0)) %>% 
+  mutate(end_na= ifelse(is.na(ended_at),1,0)) %>% 
+  mutate(meber_na= ifelse(is.na(member_casual),1,0)) %>% 
+  mutate(err_date=ifelse(started_at>ended_at,1,0)) %>% 
+  mutate(ride_length =as.numeric(difftime(ended_at, started_at, units = "mins"))) %>% 
+  mutate(day_of_week = wday(started_at, label = FALSE, week_start = 'Monday')) %>% 
+  mutate(day_ride= format(started_at, "%Y-%m-%d"))
+```
+
+### **Agrupamos para crear nuestro fichero de trabajo resumido**
+
+```{r, eval=FALSE}
+dfDatos<- dfDatos %>% 
+  group_by(rideable_type,member_casual,day_ride,day_of_week, rid_na, sta_na, end_na, meber_na, err_date) %>% 
+  summarize(media_min=mean(ride_length),ndatos=sum(ndata), max_min=max(ride_length))
+```
+
+### **Exportamos nuestro resumen de datos a CSV**
+
+```{r, eval=FALSE}
+write.csv(dfDatos, file = "resumen_datos.csv", row.names = FALSE)
+```
+
+# ___Proceso de datos en Power Query___
+let
+    Origen = Csv.Document(File.Contents("resumen_datos.csv"),[Delimiter=",", Columns=12, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Encabezados promovidos" = Table.PromoteHeaders(Origen, [PromoteAllScalars=true]),
+    #"Valor reemplazado" = Table.ReplaceValue(#"Encabezados promovidos",".",",",Replacer.ReplaceText,{"media_min"}),
+    #"Tipo cambiado" = Table.TransformColumnTypes(#"Valor reemplazado",{{"rideable_type", type text}, {"member_casual", type text}, {"day_ride", type date}, {"day_of_week", Int64.Type}, {"rid_na", Int64.Type}, {"sta_na", Int64.Type}, {"end_na", Int64.Type}, {"meber_na", Int64.Type}, {"err_date", Int64.Type}, {"media_min", type number}, {"ndatos", Int64.Type}, {"max_min", type number}}),
+    #"Columna condicional agregada" = Table.AddColumn(#"Tipo cambiado", "Filtrado", each if [rid_na] = 1 then 0 else if [sta_na] = 1 then 0 else if [end_na] = 1 then 0 else if [meber_na] = 1 then 0 else if [err_date] = 1 then 0 else 1)
+in
+    #"Columna condicional agregada"
